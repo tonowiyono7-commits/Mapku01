@@ -68,6 +68,8 @@ data class DetectorUiState(
     val hasLocationPermission: Boolean = false,
     val hasFineLocation: Boolean = false,
     val isLiveMonitoring: Boolean = false,
+    val isMockServiceActive: Boolean = false,
+    val showSelectMockAppDialog: Boolean = false,
     val isScanningPackages: Boolean = false,
     val providerAvailability: ProviderAvailability = ProviderAvailability(false, false, false),
     val currentFix: LocationFixSnapshot? = null,

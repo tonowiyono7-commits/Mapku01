@@ -187,10 +187,14 @@ fun FullScreenOsmMap(
                 .testTag("fullscreen_osm_map"),
         )
 
-        // Top-left subtle warning chip ONLY if mock location or mock apps detected
-        if (uiState.isLocationMocked || uiState.isAllowMockLocationsOn || uiState.hasMockAppsInstalled) {
-            val isSpoofed = uiState.isLocationMocked || uiState.isAllowMockLocationsOn
-            val pillColor = if (isSpoofed) statusColors.spoofed else statusColors.caution
+        // Top-left status chip when Mock GPS is active or mock detection triggers
+        if (uiState.isMockServiceActive || uiState.isLocationMocked || uiState.isAllowMockLocationsOn || uiState.hasMockAppsInstalled) {
+            val isSpoofed = !uiState.isMockServiceActive && (uiState.isLocationMocked || uiState.isAllowMockLocationsOn)
+            val pillColor = when {
+                uiState.isMockServiceActive -> BrandBlue
+                isSpoofed -> statusColors.spoofed
+                else -> statusColors.caution
+            }
             Surface(
                 color = Color.White.copy(alpha = 0.92f),
                 shape = RoundedCornerShape(6.dp),
@@ -207,17 +211,17 @@ fun FullScreenOsmMap(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ReportProblem,
+                        imageVector = if (uiState.isMockServiceActive) Icons.Rounded.PlayArrow else Icons.Rounded.ReportProblem,
                         contentDescription = null,
                         tint = pillColor,
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isSpoofed) {
-                            stringResource(R.string.status_mock_detected_title)
-                        } else {
-                            stringResource(R.string.status_caution_title)
+                        text = when {
+                            uiState.isMockServiceActive -> stringResource(R.string.mock_active_badge)
+                            isSpoofed -> stringResource(R.string.status_mock_detected_title)
+                            else -> stringResource(R.string.status_caution_title)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = pillColor,
@@ -329,9 +333,9 @@ fun FullScreenOsmMap(
                 .testTag("map_fab_toggle"),
         ) {
             Icon(
-                imageVector = if (uiState.isLiveMonitoring) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                imageVector = if (uiState.isMockServiceActive) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                 contentDescription = stringResource(
-                    if (uiState.isLiveMonitoring) {
+                    if (uiState.isMockServiceActive) {
                         R.string.action_stop_monitoring
                     } else {
                         R.string.action_start_monitoring

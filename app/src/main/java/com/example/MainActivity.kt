@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -177,13 +178,17 @@ fun MockDetectorApp(
     }
 
     LaunchedEffect(Unit) {
-        if (!uiState.hasLocationPermission) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                ),
-            )
+        val perms = buildList {
+            if (!uiState.hasLocationPermission) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (perms.isNotEmpty()) {
+            permissionLauncher.launch(perms.toTypedArray())
         }
     }
 
@@ -223,18 +228,24 @@ fun MockDetectorApp(
         ).show()
     }
 
-    val startOrRequestLive = {
-        if (!uiState.hasLocationPermission) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                ),
-            )
-        } else {
-            viewModel.pollLocationFix(centerMap = true)
-            viewModel.startLiveMonitoring()
+    val startMockAction = {
+        val started = viewModel.startMockGps()
+        if (started) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.mock_started_toast),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
+    }
+
+    val stopMockAction = {
+        viewModel.stopMockGps()
+        Toast.makeText(
+            context,
+            context.getString(R.string.mock_stopped_toast),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     ModalNavigationDrawer(
@@ -402,7 +413,7 @@ fun MockDetectorApp(
                     actions = {
                         if (uiState.destination == DrawerDestination.MAP) {
                             IconButton(
-                                onClick = startOrRequestLive,
+                                onClick = startMockAction,
                                 modifier = Modifier
                                     .size(48.dp)
                                     .testTag("topbar_play_button"),
@@ -410,12 +421,12 @@ fun MockDetectorApp(
                                 Icon(
                                     imageVector = Icons.Rounded.PlayArrow,
                                     contentDescription = stringResource(R.string.action_start_monitoring),
-                                    modifier = Modifier.alpha(if (uiState.isLiveMonitoring) 0.5f else 1f),
+                                    modifier = Modifier.alpha(if (uiState.isMockServiceActive) 0.5f else 1f),
                                 )
                             }
                             IconButton(
-                                onClick = { viewModel.stopLiveMonitoring() },
-                                enabled = uiState.isLiveMonitoring,
+                                onClick = stopMockAction,
+                                enabled = uiState.isMockServiceActive || uiState.isLiveMonitoring,
                                 modifier = Modifier
                                     .size(48.dp)
                                     .testTag("topbar_stop_button"),
@@ -423,7 +434,7 @@ fun MockDetectorApp(
                                 Icon(
                                     imageVector = Icons.Rounded.Stop,
                                     contentDescription = stringResource(R.string.action_stop_monitoring),
-                                    modifier = Modifier.alpha(if (uiState.isLiveMonitoring) 1f else 0.7f),
+                                    modifier = Modifier.alpha(if (uiState.isMockServiceActive) 1f else 0.7f),
                                 )
                             }
                             IconButton(
@@ -540,10 +551,10 @@ fun MockDetectorApp(
                             }
                         },
                         onFabToggleLive = {
-                            if (uiState.isLiveMonitoring) {
-                                viewModel.stopLiveMonitoring()
+                            if (uiState.isMockServiceActive) {
+                                stopMockAction()
                             } else {
-                                startOrRequestLive()
+                                startMockAction()
                             }
                         },
                         onAlertBadgeClick = {
@@ -619,6 +630,31 @@ fun MockDetectorApp(
             confirmButton = {
                 TextButton(onClick = { showHelpDialog = false }) {
                     Text(text = stringResource(R.string.dialog_ok), color = BrandBlue)
+                }
+            },
+        )
+    }
+
+    if (uiState.showSelectMockAppDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSelectMockAppDialog() },
+            containerColor = Color.White,
+            title = { Text(text = stringResource(R.string.mock_required_title)) },
+            text = { Text(text = stringResource(R.string.mock_required_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissSelectMockAppDialog()
+                        openDeveloperOptions()
+                    },
+                    modifier = Modifier.testTag("mock_open_dev_options_button"),
+                ) {
+                    Text(text = stringResource(R.string.action_open_dev_options), color = BrandBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissSelectMockAppDialog() }) {
+                    Text(text = stringResource(R.string.dialog_cancel), color = BrandBlue)
                 }
             },
         )

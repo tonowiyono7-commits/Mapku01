@@ -1,13 +1,18 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Intent
 import android.location.Location
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppPreferencesRepository
 import com.example.detector.MockLocationDetector
 import com.example.location.LocationMonitorRepository
+import com.example.location.MockLocationHelper
+import com.example.location.MockLocationService
+import com.example.location.MockLocationStateBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,10 +47,39 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
     init {
         refreshPermissionsAndEnvironment()
         refreshPackageAudit()
+        observeMockEngineState()
+    }
+
+    private fun observeMockEngineState() {
+        viewModelScope.launch {
+            MockLocationStateBus.state.collect { engine ->
+                _uiState.update { state ->
+                    val showDialog = engine.lastError == "MOCK_PERMISSION_DENIED"
+                    if (engine.isRunning) {
+                        state.copy(
+                            isMockServiceActive = true,
+                            selectedLatitude = engine.latitude,
+                            selectedLongitude = engine.longitude,
+                            showSelectMockAppDialog = showDialog || state.showSelectMockAppDialog,
+                        )
+                    } else {
+                        state.copy(
+                            isMockServiceActive = false,
+                            showSelectMockAppDialog = showDialog || state.showSelectMockAppDialog,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun navigateTo(destination: DrawerDestination) {
         _uiState.update { it.copy(destination = destination) }
+    }
+
+    fun dismissSelectMockAppDialog() {
+        MockLocationStateBus.update { it.copy(lastError = null) }
+        _uiState.update { it.copy(showSelectMockAppDialog = false) }
     }
 
     fun selectMapCoordinate(latitude: Double, longitude: Double, recordHistory: Boolean = true) {
@@ -73,6 +107,16 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
                 savedMarkers = updatedMarkers,
             )
         }
+
+        if (_uiState.value.isMockServiceActive) {
+            val context = getApplication<Application>().applicationContext
+            val updateIntent = Intent(context, MockLocationService::class.java).apply {
+                action = MockLocationService.ACTION_UPDATE_COORDS
+                putExtra(MockLocationService.EXTRA_LAT, latitude)
+                putExtra(MockLocationService.EXTRA_LON, longitude)
+            }
+            context.startService(updateIntent)
+        }
     }
 
     fun jumpToMarker(marker: SavedMarker) {
@@ -84,6 +128,15 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
                 mapZoomLevel = if (state.settings.autoZoomMarkerGroup) 15.0 else state.mapZoomLevel,
                 mapCenterTrigger = state.mapCenterTrigger + 1,
             )
+        }
+        if (_uiState.value.isMockServiceActive) {
+            val context = getApplication<Application>().applicationContext
+            val updateIntent = Intent(context, MockLocationService::class.java).apply {
+                action = MockLocationService.ACTION_UPDATE_COORDS
+                putExtra(MockLocationService.EXTRA_LAT, marker.latitude)
+                putExtra(MockLocationService.EXTRA_LON, marker.longitude)
+            }
+            context.startService(updateIntent)
         }
     }
 
@@ -193,7 +246,7 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
 
     fun onPermissionResult() {
         refreshPermissionsAndEnvironment()
-        if (_uiState.value.hasLocationPermission) {
+        if (_uiState.value.hasLocationPermission && !_uiState.value.isMockServiceActive) {
             pollLocationFix(centerMap = true)
             startLiveMonitoring()
         }
@@ -216,12 +269,38 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun runFullDiagnosticScan() {
-        refreshPermissionsAndEnvironment()
-        refreshPackageAudit()
-        if (_uiState.value.hasLocationPermission) {
-            pollLocationFix(centerMap = false)
+    /**
+     * Starts real Android Mock GPS injection at the currently selected map pin.
+     * Prompts the user to open Developer Options if Mapku is not yet selected
+     * under "Select mock location app".
+     */
+    fun startMockGps(): Boolean {
+        val context = getApplication<Application>().applicationContext
+        if (!MockLocationHelper.isMockAppSelected(context)) {
+            _uiState.update { it.copy(showSelectMockAppDialog = true) }
+            return false
         }
+
+        val state = _uiState.value
+        val startIntent = Intent(context, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_START
+            putExtra(MockLocationService.EXTRA_LAT, state.selectedLatitude)
+            putExtra(MockLocationService.EXTRA_LON, state.selectedLongitude)
+        }
+        ContextCompat.startForegroundService(context, startIntent)
+        if (state.hasLocationPermission) {
+            startLiveMonitoring()
+        }
+        return true
+    }
+
+    fun stopMockGps() {
+        val context = getApplication<Application>().applicationContext
+        val stopIntent = Intent(context, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_STOP
+        }
+        runCatching { context.startService(stopIntent) }
+        stopLiveMonitoring()
     }
 
     fun refreshPackageAudit() {
@@ -264,7 +343,7 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(isLiveMonitoring = true) }
         liveCollectionJob = viewModelScope.launch {
             repository.observeLocationUpdates(minTimeMs = intervalMs).collect { location ->
-                processIncomingLocation(location, centerMap = true)
+                processIncomingLocation(location, centerMap = !_uiState.value.isMockServiceActive)
             }
         }
     }
@@ -294,26 +373,32 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
             isFromMockProvider = isMocked,
         )
 
-        val historyMarker = SavedMarker(
-            id = nextMarkerId.getAndIncrement(),
-            label = "${snapshot.provider.uppercase(Locale.US)} Fix",
-            latitude = location.latitude,
-            longitude = location.longitude,
-            isFavorite = false,
-            isFromMockProvider = isMocked,
-            provider = snapshot.provider,
-            createdAtMs = System.currentTimeMillis(),
-        )
-
+        val shouldRecordPin = !_uiState.value.isMockServiceActive
         _uiState.update { state ->
-            val updatedMarkers = (listOf(historyMarker) + state.savedMarkers).take(120)
-            prefsRepo.saveMarkers(updatedMarkers)
+            val updatedMarkers = if (shouldRecordPin) {
+                val historyMarker = SavedMarker(
+                    id = nextMarkerId.getAndIncrement(),
+                    label = "${snapshot.provider.uppercase(Locale.US)} Fix",
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    isFavorite = false,
+                    isFromMockProvider = isMocked,
+                    provider = snapshot.provider,
+                    createdAtMs = System.currentTimeMillis(),
+                )
+                (listOf(historyMarker) + state.savedMarkers).take(120).also {
+                    prefsRepo.saveMarkers(it)
+                }
+            } else {
+                state.savedMarkers
+            }
+
             state.copy(
                 currentFix = snapshot,
                 isLocationMocked = isMocked,
                 isAllowMockLocationsOn = allowMockSettingOn,
-                selectedLatitude = location.latitude,
-                selectedLongitude = location.longitude,
+                selectedLatitude = if (state.isMockServiceActive) state.selectedLatitude else location.latitude,
+                selectedLongitude = if (state.isMockServiceActive) state.selectedLongitude else location.longitude,
                 mapZoomLevel = if (centerMap) 15.0 else state.mapZoomLevel,
                 mapCenterTrigger = if (centerMap) state.mapCenterTrigger + 1 else state.mapCenterTrigger,
                 savedMarkers = updatedMarkers,
@@ -326,10 +411,11 @@ class DetectorViewModel(application: Application) : AndroidViewModel(application
         val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val now = formatter.format(Date())
         return buildString {
-            appendLine("=== MockDetector Diagnostic Report ===")
+            appendLine("=== Mapku Diagnostic Report ===")
             appendLine("Generated: $now")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (SDK ${state.sdkInt})")
             appendLine("Verdict: ${state.verdict.name}")
+            appendLine("Mock Service Active: ${state.isMockServiceActive}")
             appendLine("isLocationFromMockProvider: ${state.isLocationMocked}")
             appendLine("isAllowMockLocationsOn (<API 23): ${state.isAllowMockLocationsOn}")
             appendLine("checkForAllowMockLocationsApps: ${state.hasMockAppsInstalled} (${state.flaggedApps.size}/${state.totalPackagesScanned})")

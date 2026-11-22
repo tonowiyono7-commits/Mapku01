@@ -385,7 +385,13 @@ private fun MethodCheckCard(
         ) {
             Icon(imageVector = icon, contentDescription = null, tint = badgeColor, modifier = Modifier.size(22.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, style = MaterialTheme.typography.labelMedium, color = InkPrimary)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = InkSecondary)
             }
             Surface(color = badgeColor.copy(alpha = 0.14f), shape = MaterialTheme.shapes.extraSmall) {

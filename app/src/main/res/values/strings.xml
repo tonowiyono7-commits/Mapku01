@@ -137,4 +137,14 @@
     <string name="toast_markers_imported">Imported %1$d marker(s)</string>
     <string name="toast_import_failed">Unable to parse markers JSON file</string>
     <string name="toast_dev_options_unavailable">Developer Options unavailable on this device</string>
+
+    <!-- Mock Location Service & Prompt -->
+    <string name="mock_channel_name">Active Mock Location</string>
+    <string name="mock_notif_title">Mapku Mock GPS Active</string>
+    <string name="mock_notif_stop">Stop</string>
+    <string name="mock_required_title">Select Mock Location App</string>
+    <string name="mock_required_body">To start Mock GPS, open Developer Options → \"Select mock location app\" (Pilih aplikasi lokasi palsu) and choose Mapku.</string>
+    <string name="mock_started_toast">Mock GPS started</string>
+    <string name="mock_stopped_toast">Mock GPS stopped</string>
+    <string name="mock_active_badge">Mock GPS Active</string>
 </resources>
