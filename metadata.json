@@ -1,0 +1,6 @@
+{
+  "name": "Mapku",
+  "description": "Real-time Android GPS spoofing and mock location detector based on smarques84/MockLocationDetector.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
