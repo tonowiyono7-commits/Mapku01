@@ -17,19 +17,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -49,7 +58,6 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,20 +65,17 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,7 +104,6 @@ import com.example.ui.theme.DrawerHighlightGray
 import com.example.ui.theme.InkPrimary
 import com.example.ui.theme.InkSecondary
 import com.example.ui.theme.MockDetectorTheme
-import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -123,8 +127,7 @@ fun MockDetectorApp(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    var isDrawerOpen by remember { mutableStateOf(false) }
 
     var showFilterDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
@@ -192,9 +195,9 @@ fun MockDetectorApp(
         }
     }
 
-    BackHandler(enabled = drawerState.isOpen || uiState.destination != DrawerDestination.MAP) {
-        if (drawerState.isOpen) {
-            scope.launch { drawerState.close() }
+    BackHandler(enabled = isDrawerOpen || uiState.destination != DrawerDestination.MAP) {
+        if (isDrawerOpen) {
+            isDrawerOpen = false
         } else {
             viewModel.navigateTo(DrawerDestination.MAP)
         }
@@ -248,117 +251,7 @@ fun MockDetectorApp(
         ).show()
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = uiState.destination == DrawerDestination.MAP,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = Color.White,
-                drawerShape = RoundedCornerShape(0.dp),
-                modifier = Modifier.width(290.dp),
-            ) {
-                // Blue Drawer Header matching Screenshot 3
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BrandBlue)
-                        .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_custom_clean),
-                        contentDescription = stringResource(R.string.app_name),
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                    )
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                DrawerRow(
-                    icon = Icons.Rounded.Map,
-                    label = stringResource(R.string.nav_map),
-                    selected = uiState.destination == DrawerDestination.MAP,
-                    onClick = {
-                        viewModel.navigateTo(DrawerDestination.MAP)
-                        scope.launch { drawerState.close() }
-                    },
-                    testTag = "drawer_map",
-                )
-                DrawerRow(
-                    icon = Icons.Rounded.LocationOn,
-                    label = stringResource(R.string.nav_markers),
-                    selected = uiState.destination == DrawerDestination.MARKERS,
-                    onClick = {
-                        viewModel.navigateTo(DrawerDestination.MARKERS)
-                        scope.launch { drawerState.close() }
-                    },
-                    testTag = "drawer_markers",
-                )
-
-                HorizontalDivider(
-                    color = DividerGray,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
-
-                Text(
-                    text = stringResource(R.string.nav_other_options),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = InkSecondary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-
-                DrawerRow(
-                    icon = Icons.Rounded.Settings,
-                    label = stringResource(R.string.nav_settings),
-                    selected = uiState.destination == DrawerDestination.SETTINGS,
-                    onClick = {
-                        viewModel.navigateTo(DrawerDestination.SETTINGS)
-                        scope.launch { drawerState.close() }
-                    },
-                    testTag = "drawer_settings",
-                )
-                DrawerRow(
-                    icon = Icons.Rounded.Security,
-                    label = stringResource(R.string.nav_detect_mock),
-                    selected = uiState.destination == DrawerDestination.DETECT_MOCK,
-                    onClick = {
-                        viewModel.navigateTo(DrawerDestination.DETECT_MOCK)
-                        scope.launch { drawerState.close() }
-                    },
-                    testTag = "drawer_detect_mock",
-                )
-                DrawerRow(
-                    icon = Icons.Rounded.Settings,
-                    label = stringResource(R.string.nav_dev_settings),
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        openDeveloperOptions()
-                    },
-                    testTag = "drawer_dev_settings",
-                )
-                DrawerRow(
-                    icon = Icons.Rounded.Help,
-                    label = stringResource(R.string.nav_help),
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        showHelpDialog = true
-                    },
-                    testTag = "drawer_help",
-                )
-            }
-        },
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             containerColor = Color.White,
@@ -380,7 +273,7 @@ fun MockDetectorApp(
                     navigationIcon = {
                         if (uiState.destination == DrawerDestination.MAP) {
                             IconButton(
-                                onClick = { scope.launch { drawerState.open() } },
+                                onClick = { isDrawerOpen = true },
                                 modifier = Modifier
                                     .size(48.dp)
                                     .testTag("topbar_menu_button"),
@@ -604,6 +497,157 @@ fun MockDetectorApp(
                         onCopyReport = copyReport,
                         onSearchQueryChange = viewModel::updateAppSearchQuery,
                         onToggleShowOnlyFlagged = viewModel::toggleShowOnlyFlagged,
+                    )
+                }
+            }
+        }
+
+        // Scrim outside menu: tapping anywhere outside closes the menu
+        AnimatedVisibility(
+            visible = isDrawerOpen,
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(180)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { isDrawerOpen = false },
+                    )
+                    .testTag("drawer_scrim"),
+            )
+        }
+
+        // Slide-in drawer panel (no swipe-to-open gesture)
+        AnimatedVisibility(
+            visible = isDrawerOpen,
+            enter = slideInHorizontally(
+                animationSpec = tween(220),
+                initialOffsetX = { -it },
+            ),
+            exit = slideOutHorizontally(
+                animationSpec = tween(180),
+                targetOffsetX = { -it },
+            ),
+        ) {
+            Surface(
+                color = Color.White,
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .width(290.dp)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    )
+                    .testTag("drawer_panel"),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(BrandBlue)
+                            .statusBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_launcher_custom_clean),
+                            contentDescription = stringResource(R.string.app_name),
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                        )
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    DrawerRow(
+                        icon = Icons.Rounded.Map,
+                        label = stringResource(R.string.nav_map),
+                        selected = uiState.destination == DrawerDestination.MAP,
+                        onClick = {
+                            viewModel.navigateTo(DrawerDestination.MAP)
+                            isDrawerOpen = false
+                        },
+                        testTag = "drawer_map",
+                    )
+                    DrawerRow(
+                        icon = Icons.Rounded.LocationOn,
+                        label = stringResource(R.string.nav_markers),
+                        selected = uiState.destination == DrawerDestination.MARKERS,
+                        onClick = {
+                            viewModel.navigateTo(DrawerDestination.MARKERS)
+                            isDrawerOpen = false
+                        },
+                        testTag = "drawer_markers",
+                    )
+
+                    HorizontalDivider(
+                        color = DividerGray,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+
+                    Text(
+                        text = stringResource(R.string.nav_other_options),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+
+                    DrawerRow(
+                        icon = Icons.Rounded.Settings,
+                        label = stringResource(R.string.nav_settings),
+                        selected = uiState.destination == DrawerDestination.SETTINGS,
+                        onClick = {
+                            viewModel.navigateTo(DrawerDestination.SETTINGS)
+                            isDrawerOpen = false
+                        },
+                        testTag = "drawer_settings",
+                    )
+                    DrawerRow(
+                        icon = Icons.Rounded.Security,
+                        label = stringResource(R.string.nav_detect_mock),
+                        selected = uiState.destination == DrawerDestination.DETECT_MOCK,
+                        onClick = {
+                            viewModel.navigateTo(DrawerDestination.DETECT_MOCK)
+                            isDrawerOpen = false
+                        },
+                        testTag = "drawer_detect_mock",
+                    )
+                    DrawerRow(
+                        icon = Icons.Rounded.Settings,
+                        label = stringResource(R.string.nav_dev_settings),
+                        selected = false,
+                        onClick = {
+                            isDrawerOpen = false
+                            openDeveloperOptions()
+                        },
+                        testTag = "drawer_dev_settings",
+                    )
+                    DrawerRow(
+                        icon = Icons.Rounded.Help,
+                        label = stringResource(R.string.nav_help),
+                        selected = false,
+                        onClick = {
+                            isDrawerOpen = false
+                            showHelpDialog = true
+                        },
+                        testTag = "drawer_help",
                     )
                 }
             }
